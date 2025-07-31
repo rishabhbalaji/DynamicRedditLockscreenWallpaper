@@ -13,11 +13,11 @@ import sys
 # --- Configuration ---
 # Subreddits to pull images from (e.g., wallpapers, EarthPorn, CityPorn)
 # You can add more subreddits here.
-SUBREDDITS = ["wallpapers", "EarthPorn", "CityPorn", "wallpaper"] # Added "wallpaper" as well
+SUBREDDITS = ["motorcycles"]
 # Minimum image width for posts (to ensure good quality for lockscreen)
 MIN_IMAGE_WIDTH = 1920
 # Minimum image height for posts
-MIN_IMAGE_HEIGHT = 720 # Adjusted for more flexibility
+MIN_IMAGE_HEIGHT = 1080 # Adjusted for more flexibility
 # Directory to save downloaded wallpapers temporarily
 WALLPAPER_DIR = "/tmp/reddit_wallpapers"
 # Full path to betterlockscreen executable (usually in /usr/local/bin)
@@ -35,6 +35,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+TIMESTAMP_FILE = "/tmp/last_wallpaper_update.txt"
 # --- Load Environment Variables ---
 # This loads variables from your .env file
 load_dotenv()
@@ -116,6 +117,9 @@ def get_and_set_wallpaper():
             #    candidate_url = submission.url
             #    logger.debug(f"  Candidate (Other trusted host): {candidate_url}")
 
+            else:
+                logger.debug(f"Skipping submission {submission.url} (not a recognized image post type or domain).")
+
             # --- Apply final quality filters (dimensions) if a candidate URL was found ---
             if candidate_url:
                 # If dimensions are available from Reddit API, use them
@@ -126,10 +130,9 @@ def get_and_set_wallpaper():
                     else:
                         logger.debug(f"  Skipping Candidate {candidate_url} (dimensions {submission_width}x{submission_height} too small).")
                 else:
-                    # If dimensions are not available from Reddit, we'll try to download and verify later
-                    # For now, just add the URL if it's a direct image type.
+                    # If dimensions are not available from Reddit, we'll trust the URL type and try to download.
                     image_urls_raw.append(candidate_url)
-                    logger.debug(f"  ---> FINAL ADDED (No Reddit dimensions, trusting URL): {candidate_url}")
+                    logger.debug(f"  ---> FINAL ADDED (No Reddit dimensions, trusting URL type): {candidate_url}")
 
 
         if not image_urls_raw:
@@ -178,6 +181,26 @@ def get_and_set_wallpaper():
             subprocess.run(update_cmd, check=True, capture_output=True, text=True)
             logger.info("Betterlockscreen cache updated successfully.")
 
+            # --- Send Dunst notification ---
+            try:
+                # Path to notify-send (usually in /usr/bin)
+                notify_cmd = ["/usr/bin/notify-send", "Wallpaper Updated", "Your lock screen wallpaper has been updated from Reddit!"]
+                subprocess.run(notify_cmd, check=True)
+                logger.info("Dunst notification sent successfully.")
+            except Exception as e:
+                logger.warning(f"Failed to send Dunst notification: {e}")
+                logger.warning("Ensure notify-send is in PATH or specify its full path.")
+            # --- End Dunst notification ---
+            
+            # --- Write timestamp to file for Polybar module ---
+            try:
+                with open(TIMESTAMP_FILE, "w") as f:
+                    f.write(str(int(time.time()))) # Write Unix timestamp
+                logger.info(f"Timestamp written to {TIMESTAMP_FILE}")
+            except Exception as e:
+                logger.warning(f"Failed to write timestamp file: {e}")
+            # --- End timestamp writing ---
+            
             return True
 
         except subprocess.CalledProcessError as e:
