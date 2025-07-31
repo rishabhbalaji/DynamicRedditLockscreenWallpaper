@@ -212,3 +212,137 @@ To get visual feedback, configure these:
     Ensure `wallpaper_updater.py` sends the notification (code is already in the script).
 
 ---
+
+---
+
+## 🚀 Usage
+
+Once installed and configured, your lock screen wallpaper will update automatically. You can also trigger updates manually.
+
+### Automatic Updates
+
+The lock screen wallpaper will update periodically (e.g., every 2 hours) thanks to the `cron` job you set up. The `dunst` notification daemon will provide a visual confirmation upon successful completion.
+
+### Manual Updates & Locking
+
+You can manually control the lock screen wallpaper update and locking:
+
+* **Update Lock Screen Wallpaper Cache:**
+    * **Keybinding:** Press `Super + Shift + W` (`$mod + Shift + w`).
+    * **Action:** This runs the `wallpaper_updater.py` script. It fetches a new image from Reddit (or local fallback), updates `betterlockscreen`'s cache, and sends a Dunst notification. Your current desktop wallpaper will *not* change.
+    * **From Terminal:** While in your project directory with `(venv)` activated, run:
+        ```bash
+        python wallpaper_updater.py
+        ```
+
+* **Lock Screen (with current cached image):**
+    * **Keybinding:** Press `Super + L` (`$mod + l`).
+    * **Action:** This runs your `lock.sh` script, which immediately locks your screen using the most recently cached image from `betterlockscreen`. This action is instantaneous.
+
+* **Automatic Locking (Idle/Suspend):**
+    * The `xss-lock` service, configured in your `i3_config`, will automatically lock your screen after a period of inactivity or when the system is suspended, using the currently cached `betterlockscreen` image.
+
+---
+
+---
+
+## 🔍 Troubleshooting
+
+Here are solutions to common issues you might encounter during setup or usage.
+
+### Python Script Issues (`wallpaper_updater.py`)
+
+* **`ModuleNotFoundError: No module named 'dotenv'` (or 'praw', 'requests'):**
+    * **Problem:** The Python script cannot find its required libraries.
+    * **Solution:** Your Python virtual environment (`venv`) is likely not activated. Navigate to your project directory (`cd DynamicRedditLockscreenWallpaper`) and run `source venv/bin/activate`. Ensure `pip install -r requirements.txt` was run successfully while `venv` was active.
+
+* **`ERROR - Missing one or more Reddit API credentials...`:**
+    * **Problem:** The script cannot load your Reddit credentials.
+    * **Solution:** Double-check your `.env` file (`code .env`). Ensure all variable names (`REDDIT_USERNAME`, `REDDIT_PASSWORD`, `REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`, `REDDIT_USER_AGENT`) are spelled correctly (case-sensitive) and that their values are accurate (no typos, extra spaces, or missing characters). Also, confirm `REDDIT_CLIENT_SECRET` is correctly named.
+
+* **`An error occurred: invalid_grant error processing request`:**
+    * **Problem:** Reddit's API is rejecting your authentication attempt.
+    * **Solution:** Your Reddit credentials are incorrect. Meticulously verify your `REDDIT_USERNAME`, `REDDIT_PASSWORD`, `REDDIT_CLIENT_ID`, and `REDDIT_CLIENT_SECRET` against your Reddit app page (`https://www.reddit.com/prefs/apps`). Ensure your Reddit app is of type `script` and `redirect uri` is `http://localhost:8080`.
+
+* **`429 Client Error: Too Many Requests` (or similar HTTP errors like `403`, `500` from image hosts like Imgur):**
+    * **Problem:** The script is hitting rate limits or being blocked by the image host during download.
+    * **Solution:** The script includes a 1-second delay and custom `User-Agent` headers to mitigate this. If it persists, try increasing the `time.sleep(1)` value in `wallpaper_updater.py` or running the script less frequently. Sometimes, it's a temporary block by the host; try again later.
+
+* **`WARNING - No suitable image URLs found...`:**
+    * **Problem:** Reddit is working, but no images are matching your filtering criteria (minimum dimensions, file type) within the fetched posts.
+    * **Solution:**
+        * Expand your `SUBREDDITS` list in `wallpaper_updater.py`.
+        * Loosen `MIN_IMAGE_WIDTH` and `MIN_IMAGE_HEIGHT` (e.g., lower them to `1280` or `720`).
+        * Increase `limit` in `subreddit.top('week', limit=X)` (e.g., to `200` or `300`).
+        * Consider changing `subreddit.top('week', ...)` to `subreddit.hot(...)` or `subreddit.new(...)` for a different set of posts.
+
+* **`'Submission' object has no attribute 'width'`:**
+    * **Problem:** The script tried to access a dimension property (`width` or `height`) on a Reddit post object that doesn't have it (e.g., a text post, video, or external link where PRAW doesn't provide dimensions).
+    * **Solution:** (This should be resolved in the current script version). Ensure your `wallpaper_updater.py` is up-to-date with the `hasattr()` checks around `submission.width` and `submission.height`.
+
+### `betterlockscreen` & `i3lock-color` Issues
+
+* **`betterlockscreen: line X: bc: command not found`:**
+    * **Problem:** `betterlockscreen` needs the `bc` utility for calculations.
+    * **Solution:** Install `bc`: `sudo apt install -y bc`.
+
+* **Lock screen doesn't have custom styling (rings, custom fonts for text, etc.):**
+    * **Problem:** You are likely using the basic system `i3lock`, not `i3lock-color`.
+    * **Solution:** Ensure `i3lock-color` has been successfully compiled and installed, and that `which i3lock` points to `/usr/local/bin/i3lock` (or `/usr/bin/i3lock` if it overwrote the system one, verified by `i3lock --version` showing "Raymond Li").
+
+* **`i3lock: unrecognized option '--ring-width'` (or similar fancy options):**
+    * **Problem:** Confirms you are using the basic `i3lock` that doesn't support advanced styling.
+    * **Solution:** You *must* install `i3lock-color`. Refer to the "System Dependencies" section in the Installation Guide.
+
+* **Lock screen is very slow/has a delay when manually locking (`$mod+l`) or automatically (`xss-lock`):**
+    * **Problem:** The `lock.sh` script is running `wallpaper_updater.py` (fetching, downloading, processing) every time you lock.
+    * **Solution:** This is intentional for a dynamic lock screen. If you prefer *instant* locks with a potentially older cached image (updated by `cron`), simplify your `~/dotfiles/scripts/lock.sh` to just:
+        ```bash
+        #!/bin/sh
+        betterlockscreen -l
+        exit 0
+        ```
+        Then reload i3.
+
+* **Lock screen image is stretched/incorrect on multi-monitor setup:**
+    * **Problem:** `betterlockscreen` is configured to span the image across monitors.
+    * **Solution:** Edit `~/dotfiles/betterlockscreenrc` and set `span_image=false`. Then regenerate cached images with `betterlockscreen -u "/path/to/image.jpg" --fx`.
+
+### Font & Icon Issues
+
+* **Icons (like Polybar workspace numbers, CAVA, etc.) show as boxes or are missing:**
+    * **Problem:** The application (Polybar, Alacritty, Dunst, i3lock-color) isn't loading your Nerd Font or Font Awesome correctly.
+    * **Solution:**
+        * Ensure `JetBrainsMono Nerd Font` and `Font Awesome 6 Free/Brands` are correctly installed in `~/.local/share/fonts/` and `fc-cache -r -v` has been run.
+        * Verify `fc-match "JetBrainsMono Nerd Font"` points to the correct font file.
+        * Check `~/dotfiles/config.ini` (Polybar), `~/dotfiles/alacritty_config` (Alacritty), `~/dotfiles/dunstrc` (Dunst), and `~/dotfiles/scripts/lock.sh` (i3lock-color) use the *exact* font name (e.g., `"JetBrainsMono Nerd Font"`, `"Font Awesome 6 Free"`).
+        * Ensure `~/.config/fontconfig/fonts.conf` is correctly set up to prioritize JetBrainsMono for generic `monospace` fonts.
+
+* **Dunst notifications not appearing or not themed:**
+    * **Problem:** Dunst might not be running, or another notification daemon is interfering, or it can't find its icon theme.
+    * **Solution:**
+        * Verify Dunst is running: `ps aux | grep dunst | grep -v grep`. If not, check `exec_always --no-startup-id dunst` in `i3_config` and `sudo apt install -y dunst`.
+        * Ensure `icon_theme = Adwaita` (or `Flat-Remix-Blue` etc.) is correctly set in `~/dotfiles/dunstrc` to an installed theme (check `lxappearance`).
+
+---
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! If you have suggestions for improvements, new features, or find a bug, please feel free to:
+
+1.  Fork the repository.
+2.  Create a new branch (`git checkout -b feature/your-feature-name`).
+3.  Make your changes.
+4.  Commit your changes (`git commit -m 'feat: Add new feature'`).
+5.  Push to the branch (`git push origin feature/your-feature-name`).
+6.  Open a Pull Request.
+
+Please ensure your code adheres to a clean, readable style and include relevant logging for debugging.
+
+## 📄 License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
